@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: financas-db
+    environment:
+      POSTGRES_DB: financas
+      POSTGRES_USER: financas
+      POSTGRES_PASSWORD: financas
+    ports:
+      # 5433 no host pra nao conflitar com o postgres nativo do windows
+      - "5433:5432"
+    volumes:
+      - financas-data:/var/lib/postgresql/data
+
+volumes:
+  financas-data:

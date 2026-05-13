@@ -1,0 +1,14 @@
+target/
+.idea/
+.git/
+.gitignore
+*.log
+*.iml
+.env
+.env.local
+HELP.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+smoke-test.ps1
+README.md

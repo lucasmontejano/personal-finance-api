@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: financas
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/financas}
+    username: ${DATABASE_USER:financas}
+    password: ${DATABASE_PASSWORD:financas}
+
+  jpa:
+    hibernate:
+      # validate pq quem manda na estrutura é o flyway
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+
+app:
+  jwt:
+    # default é só pra dev. em prod, setar JWT_SECRET com uma chave nova (base64, 32+ bytes)
+    secret: ${JWT_SECRET:bWluaGEtY2hhdmUtc2VjcmV0YS1kZS1kZXYtcHJlY2lzYS10ZXItcGVsby1tZW5vcy0zMi1ieXRlcw==}
+    expiracao-horas: ${JWT_EXPIRACAO_HORAS:8}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
