@@ -9,12 +9,9 @@ API REST pra controle de finanças pessoais. Java 21, Spring Boot 3.4.2, Postgre
 ## Comandos
 
 ```bash
-docker compose up -d                                       # postgres na porta 5433
-mvn spring-boot:run                                        # app na porta 8080
-mvn test                                                   # roda integration tests (precisa Docker)
-mvn -Dtest=AuthIntegrationTest test                        # uma classe só
-mvn -Dtest=AuthIntegrationTest#cadastraEAcessaMe test      # um método só
-.\smoke-test.ps1                                           # smoke test fim-a-fim contra a app rodando
+docker compose up -d            # postgres na porta 5433
+mvn spring-boot:run             # app na porta 8080
+.\smoke-test.ps1                # smoke test fim-a-fim contra a app rodando
 ```
 
 Maven não tá no PATH do sistema — o que vem com IntelliJ está em `C:\Program Files\JetBrains\IntelliJ IDEA 2025.2.5\plugins\maven\lib\maven3\bin\mvn.cmd`. Pode rodar pela IDE, chamar com path completo, ou gerar wrapper com `mvn -N wrapper:wrapper`.
@@ -49,9 +46,7 @@ Camadas Spring convencionais (`controller → service → repository → entity 
 
 ### Testes
 
-Integration tests usam Testcontainers (Postgres em container). `BaseIntegrationTest` tem o container singleton (start uma vez, reusado). Cada teste cria seu próprio usuário com email aleatório — sem `@Transactional` rollback, isolamento vem da unicidade dos dados.
-
-**Conhecido**: Docker Desktop no Windows com WSL2 backend tem incompatibilidade com o Docker Java client do Testcontainers (pipe retorna 400 com label de redirect que o client não segue). Workarounds: ligar TCP no Docker Desktop (`$env:DOCKER_HOST="tcp://localhost:2375"`) ou instalar Testcontainers Desktop.
+Validação é via `smoke-test.ps1` (PowerShell + Invoke-WebRequest contra a app rodando). Não tem teste unitário/integração — projeto pessoal, smoke cobre o necessário. Estender o script a cada feature nova.
 
 ## Estilo
 
