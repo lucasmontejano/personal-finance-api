@@ -164,6 +164,9 @@ public class TransacaoRecorrenteService {
                 r.getConta().getId(),
                 r.getContaDestino() != null ? r.getContaDestino().getId() : null,
                 r.getCategoria() != null ? r.getCategoria().getId() : null,
+                null,
+                null,
+                1,
                 "gerada pela recorrencia #" + r.getId()
         );
 
@@ -222,6 +225,8 @@ public class TransacaoRecorrenteService {
                 contaDestino = contaRepository.findByIdAndUsuarioId(contaDestinoId, user.getId())
                         .orElseThrow(() -> new RecursoNaoEncontradoException("conta destino nao encontrada"));
             }
+            // PAGAMENTO_FATURA nao faz sentido em recorrencia (faturaId muda todo mes)
+            default -> throw new IllegalArgumentException("tipo " + tipo + " nao suportado em recorrencia");
         }
 
         return new Refs(conta, contaDestino, categoria);

@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+// nao deixo trocar cartao/fatura/parcela nem data (mudaria de fatura).
+// se precisa, cria de novo.
 public record AtualizarTransacaoDTO(
 
         @NotNull TipoTransacao tipo,
@@ -19,7 +21,7 @@ public record AtualizarTransacaoDTO(
 
         @NotNull LocalDate data,
 
-        @NotNull Long contaId,
+        Long contaId,
 
         Long contaDestinoId,
         Long categoriaId,

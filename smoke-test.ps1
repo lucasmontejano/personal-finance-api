@@ -414,6 +414,261 @@ Check "POST executar-agora numa pausada (400)" @(400) {
 Check "DELETE /transacoes-recorrentes/{id}" @(204) { HttpReq DELETE "/transacoes-recorrentes/$recId" $auth } | Out-Null
 Check "GET recorrente apos delete (404)" @(404) { HttpReq GET "/transacoes-recorrentes/$recId" $auth } | Out-Null
 
+# --------- CARTOES (8a) ---------
+$r = Check "POST /cartoes (Nubank, limite 5000, fech dia 5, venc dia 12)" @(201) {
+    HttpReq POST /cartoes $auth @{
+        nome = "Nubank Roxinho"; bandeira = "MASTER"; limite = 5000.00
+        diaFechamento = 5; diaVencimento = 12
+        contaPadraoPagamentoId = $conta1Id; cor = "#820AD1"
+    }
+}
+$cartao1Id = $r.body.id
+if ([decimal]$r.body.limiteUsado -ne 0)         { Write-Host "        ALERTA: limiteUsado $($r.body.limiteUsado), esperado 0" -ForegroundColor Yellow }
+if ([decimal]$r.body.limiteDisponivel -ne 5000) { Write-Host "        ALERTA: limiteDisponivel $($r.body.limiteDisponivel), esperado 5000" -ForegroundColor Yellow }
+
+$r = Check "POST /cartoes (sem conta padrao, sem bandeira)" @(201) {
+    HttpReq POST /cartoes $auth @{
+        nome = "Inter Gold"; limite = 3000.00
+        diaFechamento = 20; diaVencimento = 28
+    }
+}
+$cartao2Id = $r.body.id
+
+$r = Check "GET /cartoes (esperando 2)" @(200) { HttpReq GET /cartoes $auth }
+if ($r.body.Count -ne 2) { Write-Host "        ALERTA: esperado 2, veio $($r.body.Count)" -ForegroundColor Yellow }
+
+$r = Check "GET /cartoes/{id}" @(200) { HttpReq GET "/cartoes/$cartao1Id" $auth }
+if ($r.body.nome -ne "Nubank Roxinho")           { Write-Host "        ALERTA: nome veio errado: $($r.body.nome)" -ForegroundColor Yellow }
+if ($r.body.contaPadraoPagamentoId -ne $conta1Id) { Write-Host "        ALERTA: contaPadraoId $($r.body.contaPadraoPagamentoId), esperado $conta1Id" -ForegroundColor Yellow }
+
+$r = Check "PUT /cartoes/{id} (limite vira 8000)" @(200) {
+    HttpReq PUT "/cartoes/$cartao1Id" $auth @{
+        nome = "Nubank Roxinho"; bandeira = "MASTER"; limite = 8000.00
+        diaFechamento = 5; diaVencimento = 12
+        contaPadraoPagamentoId = $conta1Id; cor = "#820AD1"
+    }
+}
+if ([decimal]$r.body.limite -ne 8000) { Write-Host "        ALERTA: limite depois do PUT $($r.body.limite), esperado 8000" -ForegroundColor Yellow }
+
+# validacoes negativas
+Check "POST /cartoes limite negativo (400)" @(400) {
+    HttpReq POST /cartoes $auth @{ nome = "X"; limite = -100; diaFechamento = 5; diaVencimento = 12 }
+} | Out-Null
+
+Check "POST /cartoes diaFechamento=32 (400)" @(400) {
+    HttpReq POST /cartoes $auth @{ nome = "X"; limite = 1000; diaFechamento = 32; diaVencimento = 12 }
+} | Out-Null
+
+Check "POST /cartoes diaVencimento=0 (400)" @(400) {
+    HttpReq POST /cartoes $auth @{ nome = "X"; limite = 1000; diaFechamento = 5; diaVencimento = 0 }
+} | Out-Null
+
+Check "POST /cartoes nome em branco (400)" @(400) {
+    HttpReq POST /cartoes $auth @{ nome = ""; limite = 1000; diaFechamento = 5; diaVencimento = 12 }
+} | Out-Null
+
+Check "POST /cartoes conta padrao inexistente (400)" @(400) {
+    HttpReq POST /cartoes $auth @{
+        nome = "X"; limite = 1000; diaFechamento = 5; diaVencimento = 12
+        contaPadraoPagamentoId = 99999999
+    }
+} | Out-Null
+
+# isolamento
+Check "GET cartao do outro usuario (404)" @(404) { HttpReq GET "/cartoes/$cartao1Id" $auth2 } | Out-Null
+
+# delete (soft)
+Check "DELETE /cartoes/{id} (soft)" @(204) { HttpReq DELETE "/cartoes/$cartao2Id" $auth } | Out-Null
+$r = Check "GET /cartoes (deletado nao aparece)" @(200) { HttpReq GET /cartoes $auth }
+$deletadoApareceu = ($r.body | Where-Object { $_.id -eq $cartao2Id }).Count
+if ($deletadoApareceu -ne 0) { Write-Host "        ALERTA: cartao soft-deletado apareceu" -ForegroundColor Yellow }
+
+# --------- CARTOES - COMPRAS + FATURAS (8b/8c) ---------
+# cartao com fechamento=31 vence=15 -> case B, qualquer compra cai na fatura do mes seguinte (deterministico)
+$r = Check "POST /cartoes (Cartao Compras, fech 31, venc 15)" @(201) {
+    HttpReq POST /cartoes $auth @{
+        nome = "Cartao Compras"; limite = 5000.00
+        diaFechamento = 31; diaVencimento = 15
+        contaPadraoPagamentoId = $conta1Id
+    }
+}
+$cartaoComprasId = $r.body.id
+
+# saldo da conta1 antes das compras
+$rConta = Check "GET /contas (saldo antes compras cartao)" @(200) { HttpReq GET /contas $auth }
+$saldoAntes = ($rConta.body | Where-Object { $_.id -eq $conta1Id }).saldo
+
+$dataCompra = (Get-Date -Format "yyyy-MM-dd")
+
+# compra a vista R$ 200
+$r = Check "POST /transacoes DESPESA no cartao (a vista R$200)" @(201) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "DESPESA"; valor = 200.00; descricao = "Mercado cartao"
+        data = $dataCompra; cartaoId = $cartaoComprasId; categoriaId = $catDespesa.id
+    }
+}
+$compraAVistaId = $r.body.id
+$faturaAtualId = $r.body.faturaId
+if (-not $faturaAtualId) { Write-Host "        ALERTA: faturaId nao veio na resposta" -ForegroundColor Yellow }
+if ($r.body.cartaoId -ne $cartaoComprasId) { Write-Host "        ALERTA: cartaoId nao bate" -ForegroundColor Yellow }
+if ($r.body.contaId -ne $null) { Write-Host "        ALERTA: contaId deveria ser null pra compra no cartao" -ForegroundColor Yellow }
+
+# saldo da conta NAO pode mudar
+$r = Check "GET /contas (saldo NAO muda apos compra no cartao)" @(200) { HttpReq GET /contas $auth }
+$c1 = $r.body | Where-Object { $_.id -eq $conta1Id }
+if ([decimal]$c1.saldo -ne [decimal]$saldoAntes) {
+    Write-Host "        ALERTA: saldo mudou: $saldoAntes -> $($c1.saldo)" -ForegroundColor Yellow
+}
+
+# limite usado = 200
+$r = Check "GET /cartoes/{id} (limite usado 200)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId" $auth }
+if ([decimal]$r.body.limiteUsado -ne 200)        { Write-Host "        ALERTA: limiteUsado $($r.body.limiteUsado), esperado 200" -ForegroundColor Yellow }
+if ([decimal]$r.body.limiteDisponivel -ne 4800)  { Write-Host "        ALERTA: limiteDisponivel $($r.body.limiteDisponivel), esperado 4800" -ForegroundColor Yellow }
+
+# compra parcelada 3x R$300 -> 3 parcelas de R$100
+$r = Check "POST /transacoes DESPESA parcelada 3x (R$300)" @(201) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "DESPESA"; valor = 300.00; descricao = "TV nova"
+        data = $dataCompra; cartaoId = $cartaoComprasId; categoriaId = $catDespesa.id
+        parcelas = 3
+    }
+}
+$primeiraParcelaId = $r.body.id
+if ([decimal]$r.body.valor -ne 100)   { Write-Host "        ALERTA: parcela com valor $($r.body.valor), esperado 100" -ForegroundColor Yellow }
+if ($r.body.totalParcelas -ne 3)      { Write-Host "        ALERTA: totalParcelas $($r.body.totalParcelas)" -ForegroundColor Yellow }
+if ($r.body.numeroParcela -ne 1)      { Write-Host "        ALERTA: numeroParcela $($r.body.numeroParcela)" -ForegroundColor Yellow }
+
+# limite usado = 200 + 300 = 500
+$r = Check "GET /cartoes/{id} (limite usado 500)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId" $auth }
+if ([decimal]$r.body.limiteUsado -ne 500) { Write-Host "        ALERTA: limiteUsado $($r.body.limiteUsado), esperado 500" -ForegroundColor Yellow }
+
+# fatura atual deve ter compra avista (200) + 1a parcela (100) = 300
+$r = Check "GET /cartoes/{id}/faturas/atual (valor 300)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId/faturas/atual" $auth }
+if ([decimal]$r.body.valorTotal -ne 300) { Write-Host "        ALERTA: valorTotal $($r.body.valorTotal), esperado 300" -ForegroundColor Yellow }
+if ($r.body.status -ne 'ABERTA')         { Write-Host "        ALERTA: status $($r.body.status), esperado ABERTA" -ForegroundColor Yellow }
+
+# parcelas 2 e 3 sao em meses diferentes — listagem traz >= 3 faturas
+$r = Check "GET /cartoes/{id}/faturas (>= 3 faturas)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId/faturas" $auth }
+if ($r.body.Count -lt 3) { Write-Host "        ALERTA: $($r.body.Count) faturas, esperado >= 3" -ForegroundColor Yellow }
+
+# estorno R$50 (RECEITA no cartao)
+Check "POST RECEITA no cartao (estorno R$50)" @(201) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "RECEITA"; valor = 50.00; descricao = "Estorno"
+        data = $dataCompra; cartaoId = $cartaoComprasId; categoriaId = $catReceita.id
+    }
+} | Out-Null
+
+# fatura atual: 300 - 50 = 250
+$r = Check "GET fatura atual apos estorno (250)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId/faturas/atual" $auth }
+if ([decimal]$r.body.valorTotal -ne 250) { Write-Host "        ALERTA: valorTotal $($r.body.valorTotal), esperado 250" -ForegroundColor Yellow }
+
+# validacoes negativas
+Check "POST DESPESA com contaId + cartaoId (400)" @(400) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "DESPESA"; valor = 10; descricao = "x"; data = $dataCompra
+        contaId = $conta1Id; cartaoId = $cartaoComprasId; categoriaId = $catDespesa.id
+    }
+} | Out-Null
+
+Check "POST DESPESA sem contaId nem cartaoId (400)" @(400) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "DESPESA"; valor = 10; descricao = "x"; data = $dataCompra
+        categoriaId = $catDespesa.id
+    }
+} | Out-Null
+
+Check "POST TRANSFERENCIA com cartaoId (400)" @(400) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "TRANSFERENCIA"; valor = 10; descricao = "x"; data = $dataCompra
+        cartaoId = $cartaoComprasId; contaDestinoId = $conta1Id
+    }
+} | Out-Null
+
+Check "POST RECEITA cartao parcelado (400, parcelas só em DESPESA)" @(400) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "RECEITA"; valor = 100; descricao = "x"; data = $dataCompra
+        cartaoId = $cartaoComprasId; categoriaId = $catReceita.id; parcelas = 3
+    }
+} | Out-Null
+
+Check "POST com 100 parcelas (400)" @(400) {
+    HttpReq POST /transacoes $auth @{
+        tipo = "DESPESA"; valor = 100; descricao = "x"; data = $dataCompra
+        cartaoId = $cartaoComprasId; categoriaId = $catDespesa.id; parcelas = 100
+    }
+} | Out-Null
+
+# update da compra a vista — pode mudar valor
+$r = Check "PUT transacao no cartao (valor 200 -> 180)" @(200) {
+    HttpReq PUT "/transacoes/$compraAVistaId" $auth @{
+        tipo = "DESPESA"; valor = 180.00; descricao = "Mercado corrigido"
+        data = $dataCompra; categoriaId = $catDespesa.id
+    }
+}
+if ([decimal]$r.body.valor -ne 180) { Write-Host "        ALERTA: valor depois do PUT $($r.body.valor)" -ForegroundColor Yellow }
+
+# nao pode mudar a data
+Check "PUT transacao cartao mudando data (400)" @(400) {
+    HttpReq PUT "/transacoes/$compraAVistaId" $auth @{
+        tipo = "DESPESA"; valor = 180; descricao = "x"
+        data = "$anoAtual-01-01"; categoriaId = $catDespesa.id
+    }
+} | Out-Null
+
+# DELETE primeira parcela -> cascade nas outras 2
+Check "DELETE parcela 1/3 (cascade nas outras)" @(204) { HttpReq DELETE "/transacoes/$primeiraParcelaId" $auth } | Out-Null
+
+# limite usado: 180 (a vista corrigida) - 50 (estorno) + 0 parcelas = 130
+$r = Check "GET /cartoes/{id} (limite usado 130 apos cascade)" @(200) { HttpReq GET "/cartoes/$cartaoComprasId" $auth }
+if ([decimal]$r.body.limiteUsado -ne 130) { Write-Host "        ALERTA: limiteUsado $($r.body.limiteUsado), esperado 130" -ForegroundColor Yellow }
+
+# delete cartao com fatura aberta -> 400
+Check "DELETE cartao com fatura aberta (400)" @(400) { HttpReq DELETE "/cartoes/$cartaoComprasId" $auth } | Out-Null
+
+# isolamento
+Check "GET fatura de outro usuario (404)" @(404) { HttpReq GET "/faturas/$faturaAtualId" $auth2 } | Out-Null
+
+# --------- CARTOES - FECHAMENTO + PAGAMENTO (8d/8e) ---------
+# forca fechamento da fatura atual (simula scheduler)
+$r = Check "POST /faturas/{id}/forcar-fechamento" @(200) { HttpReq POST "/faturas/$faturaAtualId/forcar-fechamento" $auth }
+if ($r.body.status -ne 'FECHADA') { Write-Host "        ALERTA: status $($r.body.status), esperado FECHADA" -ForegroundColor Yellow }
+
+$rConta = Check "GET /contas (saldo antes pagamento)" @(200) { HttpReq GET /contas $auth }
+$saldoAntesPag = ($rConta.body | Where-Object { $_.id -eq $conta1Id }).saldo
+
+# pagamento parcial R$50
+Check "POST /faturas/{id}/pagar (parcial R$50)" @(200) {
+    HttpReq POST "/faturas/$faturaAtualId/pagar" $auth @{ contaId = $conta1Id; valor = 50.00 }
+} | Out-Null
+
+# status ainda FECHADA (parcial)
+$r = Check "GET fatura apos pagamento parcial (FECHADA, pago 50)" @(200) { HttpReq GET "/faturas/$faturaAtualId" $auth }
+if ($r.body.status -ne 'FECHADA')           { Write-Host "        ALERTA: status $($r.body.status), esperado FECHADA" -ForegroundColor Yellow }
+if ([decimal]$r.body.valorPago -ne 50)      { Write-Host "        ALERTA: valorPago $($r.body.valorPago), esperado 50" -ForegroundColor Yellow }
+
+# saldo caiu 50
+$r = Check "GET /contas (saldo -50 apos pagamento)" @(200) { HttpReq GET /contas $auth }
+$c1 = $r.body | Where-Object { $_.id -eq $conta1Id }
+$esperado = [decimal]$saldoAntesPag - 50
+if ([decimal]$c1.saldo -ne $esperado) {
+    Write-Host "        ALERTA: saldo $($c1.saldo), esperado $esperado" -ForegroundColor Yellow
+}
+
+# paga o restante (130 - 50 = 80)
+Check "POST /faturas/{id}/pagar (R$80 restante)" @(200) {
+    HttpReq POST "/faturas/$faturaAtualId/pagar" $auth @{ contaId = $conta1Id; valor = 80.00 }
+} | Out-Null
+
+# agora PAGA
+$r = Check "GET fatura apos pagamento total (PAGA)" @(200) { HttpReq GET "/faturas/$faturaAtualId" $auth }
+if ($r.body.status -ne 'PAGA') { Write-Host "        ALERTA: status $($r.body.status), esperado PAGA" -ForegroundColor Yellow }
+
+# pagar fatura ja paga -> 400
+Check "POST pagar fatura ja paga (400)" @(400) {
+    HttpReq POST "/faturas/$faturaAtualId/pagar" $auth @{ contaId = $conta1Id; valor = 10 }
+} | Out-Null
+
 # --------- RESUMO ---------
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "RESULTADO: $passou / $total testes passaram" -ForegroundColor $(if ($passou -eq $total) { 'Green' } else { 'Yellow' })

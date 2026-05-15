@@ -17,6 +17,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "transacoes")
@@ -30,8 +31,9 @@ public class Transacao {
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
 
+    // null quando eh transacao de cartao (DESPESA/RECEITA no cartao)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conta_id", nullable = false)
+    @JoinColumn(name = "conta_id")
     private Conta conta;
 
     // só pra TRANSFERENCIA
@@ -43,6 +45,26 @@ public class Transacao {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "categoria_id")
     private Categoria categoria;
+
+    // setado quando eh compra/estorno no cartao (em vez de conta)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cartao_id")
+    private Cartao cartao;
+
+    // referencia a fatura onde a compra entrou (ou que esta sendo paga, no caso de PAGAMENTO_FATURA)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fatura_id")
+    private Fatura fatura;
+
+    // grupo de compra parcelada (mesmo UUID = mesma compra original)
+    @Column(name = "compra_parcelada_id", columnDefinition = "uuid")
+    private UUID compraParceladaId;
+
+    @Column(name = "numero_parcela")
+    private Integer numeroParcela;
+
+    @Column(name = "total_parcelas")
+    private Integer totalParcelas;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -144,6 +166,46 @@ public class Transacao {
 
     public void setCategoria(Categoria categoria) {
         this.categoria = categoria;
+    }
+
+    public Cartao getCartao() {
+        return cartao;
+    }
+
+    public void setCartao(Cartao cartao) {
+        this.cartao = cartao;
+    }
+
+    public Fatura getFatura() {
+        return fatura;
+    }
+
+    public void setFatura(Fatura fatura) {
+        this.fatura = fatura;
+    }
+
+    public UUID getCompraParceladaId() {
+        return compraParceladaId;
+    }
+
+    public void setCompraParceladaId(UUID compraParceladaId) {
+        this.compraParceladaId = compraParceladaId;
+    }
+
+    public Integer getNumeroParcela() {
+        return numeroParcela;
+    }
+
+    public void setNumeroParcela(Integer numeroParcela) {
+        this.numeroParcela = numeroParcela;
+    }
+
+    public Integer getTotalParcelas() {
+        return totalParcelas;
+    }
+
+    public void setTotalParcelas(Integer totalParcelas) {
+        this.totalParcelas = totalParcelas;
     }
 
     public TipoTransacao getTipo() {

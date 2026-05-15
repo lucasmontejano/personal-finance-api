@@ -68,18 +68,21 @@ public class ContaService {
                 .orElseThrow(() -> new RecursoNaoEncontradoException("conta nao encontrada"));
     }
 
-    // saldo = inicial + receitas - despesas + transferencias recebidas - transferencias enviadas
+    // saldo = inicial + receitas - despesas + transferencias recebidas - transferencias enviadas - pagamentos de fatura
+    // (transacoes de cartao tem conta_id null entao nao caem em nenhuma das somas — sai certo de graça)
     private BigDecimal calcularSaldo(Conta c) {
         Long id = c.getId();
         BigDecimal receitas = transacaoRepository.somarPorContaETipo(id, TipoTransacao.RECEITA);
         BigDecimal despesas = transacaoRepository.somarPorContaETipo(id, TipoTransacao.DESPESA);
         BigDecimal saidasTransfer = transacaoRepository.somarPorContaETipo(id, TipoTransacao.TRANSFERENCIA);
         BigDecimal entradasTransfer = transacaoRepository.somarPorContaDestinoETipo(id, TipoTransacao.TRANSFERENCIA);
+        BigDecimal pagFatura = transacaoRepository.somarPorContaETipo(id, TipoTransacao.PAGAMENTO_FATURA);
 
         return c.getSaldoInicial()
                 .add(receitas)
                 .subtract(despesas)
                 .add(entradasTransfer)
-                .subtract(saidasTransfer);
+                .subtract(saidasTransfer)
+                .subtract(pagFatura);
     }
 }

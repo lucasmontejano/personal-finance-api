@@ -5,6 +5,7 @@ import com.lucas.financas.model.TipoTransacao;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface TransacaoRepository extends JpaRepository<Transacao, Long> {
 
@@ -20,6 +22,26 @@ public interface TransacaoRepository extends JpaRepository<Transacao, Long> {
     Optional<Transacao> findByUsuarioIdAndIdempotencyKey(Long usuarioId, String idempotencyKey);
 
     boolean existsByCategoriaIdAndDeletadoFalse(Long categoriaId);
+
+    // soft-delete em cascade pra compra parcelada
+    @Modifying
+    @Query("""
+            UPDATE Transacao t
+            SET t.deletado = true
+            WHERE t.compraParceladaId = :compraId
+              AND t.usuario.id = :usuarioId
+              AND t.deletado = false
+            """)
+    int softDeletePorCompraParcelada(@Param("compraId") UUID compraId, @Param("usuarioId") Long usuarioId);
+
+    // pega transacoes de uma fatura (pra listar no detalhe)
+    @Query("""
+            SELECT t FROM Transacao t
+            WHERE t.fatura.id = :faturaId
+              AND t.deletado = false
+            ORDER BY t.data ASC, t.id ASC
+            """)
+    List<Transacao> buscarPorFatura(@Param("faturaId") Long faturaId);
 
     @Query("""
             SELECT t FROM Transacao t

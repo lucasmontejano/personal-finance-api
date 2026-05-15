@@ -3,5 +3,6 @@ package com.lucas.financas.model;
 public enum TipoTransacao {
     RECEITA,
     DESPESA,
-    TRANSFERENCIA
+    TRANSFERENCIA,
+    PAGAMENTO_FATURA
 }
